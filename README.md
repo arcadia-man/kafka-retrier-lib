@@ -441,3 +441,4 @@ npm test
 # License
 
 MIT
+CI protection test.

@@ -1,0 +1,11 @@
+{
+  "name": "kafka-retrier-example",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "kafka-retrier": "file:../.."
+  }
+}

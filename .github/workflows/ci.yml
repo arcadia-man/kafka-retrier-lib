@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,12 +17,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
@@ -28,3 +34,7 @@ jobs:
 
       - name: Validate npm package
         run: npm pack --dry-run
+
+      - name: Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: .github/workflows/release.sh

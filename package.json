@@ -16,6 +16,14 @@
     "dlq"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arcadia-man/kafka-retrier-lib.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "restricted"
+  },
   "dependencies": {
     "kafkajs": "^2.2.4",
     "redis": "^5.9.0"

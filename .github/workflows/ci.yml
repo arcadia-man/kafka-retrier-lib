@@ -95,7 +95,7 @@ jobs:
             --fail \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/app/installations
+            https://api.github.com/installation/repositories
 
           echo
           echo "GitHub App token is valid."

@@ -48,6 +48,11 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      - name: Setup npm
+        run: |
+          npm install --global npm@latest
+          npm --version
+
       - name: Debug Node and npm
         run: |
           echo "========================================"

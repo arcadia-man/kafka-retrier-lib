@@ -58,7 +58,7 @@ git push --follow-tags
 
 echo "Publishing package to npm..."
 
-npm publish
+npm publish --access public
 
 echo "========================================"
 echo "Release completed successfully"

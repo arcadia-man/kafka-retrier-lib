@@ -5,12 +5,6 @@ echo "========================================"
 echo "Starting release"
 echo "========================================"
 
-echo "Current branch:"
-git branch --show-current
-
-echo "Latest commit:"
-git log -1 --pretty=fuller
-
 COMMIT=$(git log -1 --pretty=%B)
 
 echo "Commit message:"
@@ -33,8 +27,6 @@ if [ -z "$VERSION" ]; then
   exit 0
 fi
 
-echo "Configuring git identity..."
-
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -43,12 +35,13 @@ node -p "require('./package.json').version"
 
 echo "Running npm version: $VERSION"
 
-npm version "$VERSION"
+npm version "$VERSION" -m "gitbot: release %s"
 
-echo "New package version:"
-node -p "require('./package.json').version"
+NEW_VERSION=$(node -p "require('./package.json').version")
+TAG="v$NEW_VERSION"
 
-echo "Configuring GitHub App authentication..."
+echo "New package version: $NEW_VERSION"
+echo "Release tag: $TAG"
 
 git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
@@ -59,6 +52,12 @@ git push --follow-tags
 echo "Publishing package to npm..."
 
 npm publish --access public
+
+echo "Creating GitHub Release..."
+
+gh release create "$TAG" \
+  --title "$TAG" \
+  --generate-notes
 
 echo "========================================"
 echo "Release completed successfully"

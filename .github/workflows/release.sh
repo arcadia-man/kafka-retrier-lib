@@ -48,9 +48,11 @@ npm version "$VERSION"
 echo "New package version:"
 node -p "require('./package.json').version"
 
-echo "Pushing version commit and tag..."
+echo "Configuring GitHub App authentication..."
 
-git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/arcadia-man/kafka-retrier-lib.git"
+git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+echo "Pushing version commit and tag..."
 
 git push --follow-tags
 

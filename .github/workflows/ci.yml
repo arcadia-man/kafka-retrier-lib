@@ -35,6 +35,16 @@ jobs:
       - name: Validate npm package
         run: npm pack --dry-run
 
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: arcadia-man
+
       - name: Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: .github/workflows/release.sh

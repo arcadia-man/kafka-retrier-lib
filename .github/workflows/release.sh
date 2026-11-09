@@ -18,6 +18,8 @@ git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 npm version "$VERSION"
 
+git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/arcadia-man/kafka-retrier-lib.git"
+
 git push --follow-tags
 
 npm publish

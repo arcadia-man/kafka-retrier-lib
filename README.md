@@ -8,14 +8,9 @@ Kafka consumer retry orchestration with Redis-backed scheduling and Dead Letter 
 
 ## Why this library?
 
-Kafka consumers commonly need reliable retry handling when message processing fails.
+Kafka consumers often need reliable retry handling when message processing fails.
 
-Instead of implementing retry scheduling, backoff calculation, retry state, and DLQ handling inside every service, this library provides a reusable orchestration layer using:
-
-- Kafka for message consumption and publishing
-- Redis for retry scheduling and state
-- Retry workers for delayed message processing
-- DLQ for messages that exceed the configured retry limit
+This library provides reusable retry orchestration using Kafka and Redis, including retry scheduling, backoff strategies, retry state management, and Dead Letter Queue handling.
 
 Your application remains responsible for business logic.
 
@@ -25,57 +20,51 @@ Your application remains responsible for business logic.
 - Shared Kafka connection per application process
 - Fixed retry strategy
 - Exponential backoff retry strategy
-- Maximum retry attempts
+- Configurable maximum retry attempts
 - Redis-backed retry scheduling
 - Background retry worker
-- Dead Letter Queue (DLQ)
+- Dead Letter Queue (DLQ) support
 - Retry metadata
-- Multiple consumers using one shared Kafka connection
+- Multiple consumers using shared Kafka infrastructure
 - At-least-once delivery model
 
 ## Architecture
 
-    Kafka Topic
-         |
-         v
-    KafkaConsumer
-         |
-         v
-    Message Handler
-      /       \
-   Success   Failure
-     |          |
-     v          v
-   Commit    RetryManager
-                |
-                v
-              Redis
-                |
-                v
-           RetryWorker
-             /     \
-            /       \
-     Retry Topic    DLQ
-          |
-          v
-     KafkaConsumer
+~~~mermaid
+flowchart TD
+    A[Kafka Topic] --> B[Kafka Consumer]
+    B --> C[Message Handler]
 
-### Responsibilities
+    C -->|Success| D[Commit Offset]
+
+    C -->|Failure| E[Retry Manager]
+    E --> F[(Redis)]
+    F --> G[Retry Worker]
+
+    G -->|Retry Available| H[Kafka Retry Topic]
+    H --> B
+
+    G -->|Max Attempts Reached| I[Dead Letter Queue]
+~~~
+
+## Components
 
 | Component | Responsibility |
 |---|---|
-| `Kafka` | Shared Kafka connection |
-| `KafkaProducer` | Publish Kafka messages |
-| `KafkaConsumer` | Consume and process messages |
-| `RetryManager` | Create and schedule retry jobs |
-| `RetryWorker` | Process scheduled retry jobs |
-| `RetryStore` | Store retry state in Redis |
+| `Kafka` | Manages shared Kafka infrastructure |
+| `KafkaProducer` | Publishes Kafka messages |
+| `KafkaConsumer` | Consumes and processes Kafka messages |
+| `RetryManager` | Handles retry scheduling |
+| `RetryWorker` | Processes scheduled retry jobs |
+| `RetryStore` | Stores retry state in Redis |
 
 The application owns the business logic and message handlers.
 
 ## Installation
 
-    npm install @arcadia-man/kafka-retrier
+~~~bash
+npm install @arcadia-man/kafka-retrier
+~~~
 
 ## Requirements
 
@@ -83,135 +72,76 @@ The application owns the business logic and message handlers.
 - Apache Kafka
 - Redis 6+
 
-## Configuration
-
-    const config = {
-      kafka: {
-        clientId: "order-service",
-        brokers: ["localhost:9092"],
-      },
-
-      redis: {
-        url: "redis://localhost:6379",
-      },
-    };
-
 ## Basic Usage
 
-    const {
-      Kafka,
-      KafkaConsumer,
-      KafkaProducer,
-      RetryStore,
-      RetryManager,
-      RetryWorker,
-    } = require("@arcadia-man/kafka-retrier");
+~~~js
+const {
+  Kafka,
+  RetryStore,
+  RetryManager,
+  RetryWorker,
+} = require("@arcadia-man/kafka-retrier");
 
-### 1. Create Kafka connection
+const { createClient } = require("redis");
 
-Create one `Kafka` instance per application process.
+async function main() {
+  const kafka = new Kafka({
+    clientId: "order-service",
+    brokers: ["localhost:9092"],
+  });
 
-    const kafka = new Kafka(config.kafka);
+  const redis = createClient({
+    url: "redis://localhost:6379",
+  });
 
-### 2. Create producer
+  await redis.connect();
 
-    const producer = kafka.createProducer();
+  const producer = kafka.createProducer();
 
-    await producer.connect();
+  await producer.connect();
 
-    await producer.send({
-      topic: "order-created",
-      messages: [
-        {
-          key: "order-123",
-          value: JSON.stringify({
-            orderId: "order-123",
-          }),
-        },
-      ],
-    });
+  const retryStore = new RetryStore(redis);
 
-### 3. Create retry components
+  const retryManager = new RetryManager({
+    retryStore,
+    retryConfig: {
+      maxAttempts: 3,
+      strategy: "exponential",
+      initialDelayMs: 1000,
+      maxDelayMs: 30000,
+    },
+  });
 
-    const retryStore = new RetryStore(redis);
+  const retryWorker = new RetryWorker({
+    retryStore,
+    producer,
+  });
 
-    const retryManager = new RetryManager({
-      retryStore,
-      retryConfig: {
-        maxAttempts: 3,
-        strategy: "exponential",
-        initialDelayMs: 1000,
-        maxDelayMs: 30000,
-      },
-    });
+  await retryWorker.start();
 
-    const retryWorker = new RetryWorker({
-      retryStore,
-      producer,
-    });
+  const consumer = kafka.createConsumer({
+    groupId: "order-service",
+    retryManager,
+  });
 
-    await retryWorker.start();
+  await consumer.connect();
 
-### 4. Create consumer
+  await consumer.subscribe({
+    topic: "order-created",
+    fromBeginning: false,
+  });
 
-    const consumer = kafka.createConsumer({
-      groupId: "order-service",
-      retryManager,
-    });
+  await consumer.start(async (message) => {
+    const order = JSON.parse(message.data);
 
-    await consumer.connect();
+    console.log("Processing order:", order.orderId);
 
-    await consumer.subscribe({
-      topic: "order-created",
-      fromBeginning: false,
-    });
+    await processOrder(order);
+  });
+}
 
-    await consumer.start(async (message) => {
-      const order = JSON.parse(message.data);
-
-      console.log("Processing order:", order.orderId);
-
-      // Your business logic
-    });
-
-## Retry on Failure
-
-When the message handler throws an error, the library schedules the message for retry.
-
-    await consumer.start(async (message) => {
-      const order = JSON.parse(message.data);
-
-      await processOrder(order);
-    });
-
-The flow is:
-
-    Kafka
-      |
-      v
-    Consumer
-      |
-      v
-    Message Handler
-      |
-    Failure
-      |
-      v
-    RetryManager
-      |
-      v
-    Redis
-      |
-      v
-    RetryWorker
-      |
-      v
-    Retry Topic
-      |
-      v
-    Consumer
-
-The application does not need to implement its own retry timer or retry queue.
+main().catch(console.error);
+~~~
 
 ## Retry Strategies
 
@@ -219,82 +149,68 @@ The application does not need to implement its own retry timer or retry queue.
 
 Use a fixed delay when every retry should happen after the same interval.
 
-    {
-      maxAttempts: 3,
-      strategy: "fixed",
-      delayMs: 5000
-    }
-
-Result:
-
-    Attempt 1 → 5s
-    Attempt 2 → 5s
-    Attempt 3 → 5s
+~~~js
+{
+  maxAttempts: 3,
+  strategy: "fixed",
+  delayMs: 5000
+}
+~~~
 
 ### Exponential Backoff
 
-Use exponential backoff when retry delays should increase after each failure.
+Use exponential backoff when the delay should increase after each failure.
 
-    {
-      maxAttempts: 5,
-      strategy: "exponential",
-      initialDelayMs: 1000,
-      maxDelayMs: 30000
-    }
+~~~js
+{
+  maxAttempts: 5,
+  strategy: "exponential",
+  initialDelayMs: 1000,
+  maxDelayMs: 30000
+}
+~~~
 
-Example:
+For example, with a 1-second initial delay:
 
-    Attempt 1 → 1s
-    Attempt 2 → 2s
-    Attempt 3 → 4s
-    Attempt 4 → 8s
-    Attempt 5 → 16s
+~~~text
+Attempt 1 → 1s
+Attempt 2 → 2s
+Attempt 3 → 4s
+Attempt 4 → 8s
+Attempt 5 → 16s
+~~~
 
 The delay is capped by `maxDelayMs`.
 
 ## Dead Letter Queue
 
-When a message reaches the maximum configured retry attempts, it can be sent to a DLQ instead of being retried indefinitely.
+When a message reaches the configured maximum retry attempts, it can be sent to a Dead Letter Queue instead of being retried indefinitely.
 
-    Original Topic
-          |
-          v
-       Consumer
-          |
-       Failure
-          |
-        Retry
-          |
-        Retry
-          |
-     Max Attempts
-          |
-          v
-         DLQ
-
-Configure the retry and DLQ topics according to your consumer configuration.
+The DLQ preserves failed messages for investigation, replay, or manual processing.
 
 ## Message Context
 
-The consumer handler receives the message data together with Kafka and retry metadata.
+The consumer handler receives message data together with Kafka and retry metadata.
 
-    await consumer.start(async (message) => {
-      console.log(message.data);
-      console.log(message.meta);
-    });
+~~~js
+await consumer.start(async (message) => {
+  console.log(message.data);
+  console.log(message.meta);
+});
+~~~
 
-Example metadata:
+The message context can contain:
 
-    {
-      topic,
-      partition,
-      offset,
-      key,
-      headers,
-      retry
-    }
+~~~text
+topic
+partition
+offset
+key
+headers
+retry metadata
+~~~
 
-The retry metadata is available when the message is processed through the retry flow.
+This allows the application to make business decisions using the original Kafka message context.
 
 ## At-Least-Once Delivery
 
@@ -302,177 +218,110 @@ The library follows an at-least-once delivery model.
 
 A message may therefore be processed more than once.
 
-Your business logic should be designed to handle duplicate processing safely.
+Business logic should be designed to handle duplicate processing safely.
 
-For example:
-
-    await processOrder(order);
-
-should ideally be idempotent when the same order is processed again.
+For example, order processing should ideally be idempotent when the same order is received again.
 
 ## Multiple Consumers
 
-Multiple consumers can share the same Kafka connection.
+Multiple consumers can share the same Kafka infrastructure.
 
-    const kafka = new Kafka({
-      clientId: "order-service",
-      brokers: ["localhost:9092"],
-    });
+~~~js
+const kafka = new Kafka({
+  clientId: "order-service",
+  brokers: ["localhost:9092"],
+});
 
-    const orderConsumer = kafka.createConsumer({
-      groupId: "order-service",
-    });
+const orderConsumer = kafka.createConsumer({
+  groupId: "order-service",
+});
 
-    const paymentConsumer = kafka.createConsumer({
-      groupId: "payment-service",
-    });
+const paymentConsumer = kafka.createConsumer({
+  groupId: "payment-service",
+});
+~~~
 
-This avoids creating a separate Kafka connection for every consumer.
-
-## Complete Example
-
-    const {
-      Kafka,
-      RetryStore,
-      RetryManager,
-      RetryWorker,
-    } = require("@arcadia-man/kafka-retrier");
-
-    const { createClient } = require("redis");
-
-    async function main() {
-      const kafka = new Kafka({
-        clientId: "order-service",
-        brokers: ["localhost:9092"],
-      });
-
-      const redis = createClient({
-        url: "redis://localhost:6379",
-      });
-
-      await redis.connect();
-
-      const producer = kafka.createProducer();
-
-      await producer.connect();
-
-      const retryStore = new RetryStore(redis);
-
-      const retryManager = new RetryManager({
-        retryStore,
-        retryConfig: {
-          maxAttempts: 3,
-          strategy: "exponential",
-          initialDelayMs: 1000,
-          maxDelayMs: 30000,
-        },
-      });
-
-      const retryWorker = new RetryWorker({
-        retryStore,
-        producer,
-      });
-
-      await retryWorker.start();
-
-      const consumer = kafka.createConsumer({
-        groupId: "order-service",
-        retryManager,
-      });
-
-      await consumer.connect();
-
-      await consumer.subscribe({
-        topic: "order-created",
-        fromBeginning: false,
-      });
-
-      await consumer.start(async (message) => {
-        const order = JSON.parse(message.data);
-
-        console.log("Processing:", order.orderId);
-
-        await processOrder(order);
-      });
-    }
-
-    main().catch(console.error);
+This avoids creating unnecessary Kafka connections for every consumer.
 
 ## Redis Retry State
 
-The retry system maintains retry state in Redis.
+Redis is used to coordinate retry scheduling and retry state.
 
-The retry workflow is:
+The library maintains the retry lifecycle through Redis and a background retry worker.
 
-    RetryManager
-         |
-         v
-    Redis retry state
-         |
-         v
-    Scheduled retry
-         |
-         v
-    RetryWorker
-         |
-         v
-    Kafka retry topic
-
-Redis is used for scheduling and coordinating retry work rather than storing business data.
+Business data is not stored in the retry system.
 
 ## Development
 
 Clone the repository:
 
-    git clone https://github.com/arcadia-man/kafka-retrier-lib.git
-    cd kafka-retrier-lib
+~~~bash
+git clone https://github.com/arcadia-man/kafka-retrier-lib.git
+cd kafka-retrier-lib
+~~~
 
 Install dependencies:
 
-    npm install
+~~~bash
+npm install
+~~~
 
 Run tests:
 
-    npm test
+~~~bash
+npm test
+~~~
 
-Validate the package:
+Validate the npm package:
 
-    npm pack --dry-run
+~~~bash
+npm pack --dry-run
+~~~
 
 ## Versioning
 
 This project follows Semantic Versioning.
 
-    MAJOR.MINOR.PATCH
+~~~text
+MAJOR.MINOR.PATCH
+~~~
 
 Examples:
 
-    1.0.0
-    1.0.1
-    1.1.0
-    2.0.0
+~~~text
+1.0.0
+1.0.1
+1.1.0
+2.0.0
+~~~
 
-Release types are determined automatically from commit messages.
+Release versions are determined automatically from commit messages.
 
-    fix: correct retry scheduling
+~~~text
+fix: correct retry scheduling
+~~~
 
-    PATCH
+Creates a patch release.
 
-    feat: add exponential retry
+~~~text
+feat: add exponential retry
+~~~
 
-    MINOR
+Creates a minor release.
 
-    feat!: change retry configuration API
+~~~text
+feat!: change retry configuration API
+~~~
 
-    MAJOR
+Creates a major release.
 
-Release commits generated by CI are prefixed with:
+Automated release commits use the `gitbot:` prefix.
 
-    gitbot:
+Example:
 
-For example:
-
-    gitbot: release v1.1.0
+~~~text
+gitbot: release 1.1.0
+~~~
 
 ## Repository
 

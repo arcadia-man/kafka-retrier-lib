@@ -26,14 +26,19 @@ jobs:
           echo "========================================"
           echo "Git checkout debug"
           echo "========================================"
+
           echo "Branch:"
           git branch --show-current
+
           echo "Commit:"
           git rev-parse HEAD
+
           echo "Remote:"
           git remote -v
+
           echo "Git credential helper:"
           git config --show-origin --get-all credential.helper || true
+
           echo "Git URL rewrite:"
           git config --show-origin --get-regexp '^url\.' || true
 
@@ -48,6 +53,7 @@ jobs:
           echo "========================================"
           echo "Node/npm debug"
           echo "========================================"
+
           node --version
           npm --version
           npm config get registry
@@ -101,7 +107,10 @@ jobs:
           echo "GitHub App token is valid."
 
       - name: Release
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: >
+          github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' &&
+          !startsWith(github.event.head_commit.message, 'gitbot:')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: .github/workflows/release.sh

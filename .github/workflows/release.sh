@@ -43,7 +43,7 @@ node -p "require('./package.json').version"
 
 echo "Running npm version: $VERSION"
 
-npm version "$VERSION"
+npm version "$VERSION" -m "gitbot: release %s"
 
 echo "New package version:"
 node -p "require('./package.json').version"

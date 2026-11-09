@@ -1,7 +1,7 @@
 {
   "name": "@arcadia-man/kafka-retrier",
-  "version": "1.0.0",
-  "description": "Kafka consumer and retry orchestration library with Redis-backed scheduling",
+  "version": "1.0.1",
+  "description": "Kafka consumer retry orchestration with Redis-backed scheduling and Dead Letter Queue support",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
@@ -10,16 +10,24 @@
   "keywords": [
     "kafka",
     "kafkajs",
-    "retry",
     "redis",
+    "retry",
+    "retry-queue",
     "dead-letter-queue",
-    "dlq"
+    "dlq",
+    "kafka-consumer",
+    "backoff",
+    "message-processing"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/arcadia-man/kafka-retrier-lib.git"
+    "url": "git+https://github.com/arcadia-man/kafka-retrier-lib.git"
   },
+  "bugs": {
+    "url": "https://github.com/arcadia-man/kafka-retrier-lib/issues"
+  },
+  "homepage": "https://github.com/arcadia-man/kafka-retrier-lib#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"

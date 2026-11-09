@@ -45,9 +45,14 @@ echo "Release tag: $TAG"
 
 git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
+echo "Syncing main before pushing version commit and tag..."
+
+git fetch origin main
+git rebase origin/main
+
 echo "Pushing version commit and tag..."
 
-git push --follow-tags
+git push origin main --follow-tags
 
 echo "Publishing package to npm..."
 

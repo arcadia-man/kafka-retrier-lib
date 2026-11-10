@@ -1,6 +1,6 @@
 {
   "name": "@arcadia-man/kafka-retrier",
-  "version": "1.0.5",
+  "version": "1.0.1",
   "description": "Kafka consumer and retry orchestration library with Redis-backed scheduling",
   "main": "index.js",
   "type": "commonjs",
@@ -35,5 +35,11 @@
   "dependencies": {
     "kafkajs": "^2.2.4",
     "redis": "^5.9.0"
-  }
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
 }

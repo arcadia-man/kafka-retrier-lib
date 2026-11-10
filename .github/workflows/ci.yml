@@ -7,13 +7,71 @@ on:
       - main
   pull_request:
 
-permissions:
-  contents: write
-  id-token: write
+concurrency:
+  group: kafka-retrier-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  # -----------------------------------------
+  # JOB 1: TEST
+  # -----------------------------------------
   test:
+    name: Test and Validate
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Setup npm
+        run: |
+          npm install --global npm@11.9.0
+
+          echo "Node: $(node --version)"
+          echo "npm: $(npm --version)"
+
+      - name: Configure npm registry
+        run: |
+          npm config set registry https://registry.npmjs.org/
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Validate npm package
+        run: npm pack --dry-run
+
+  # -----------------------------------------
+  # JOB 2: RELEASE
+  # Runs only after successful tests.
+  # -----------------------------------------
+  release:
+    name: Publish and Release
+    runs-on: ubuntu-latest
+
+    needs: test
+
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !startsWith(github.event.head_commit.message, 'gitbot:')
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -31,42 +89,19 @@ jobs:
       - name: Setup npm
         run: |
           npm install --global npm@11.9.0
+
           echo "Node: $(node --version)"
           echo "npm: $(npm --version)"
 
       - name: Configure npm registry
         run: |
           npm config set registry https://registry.npmjs.org/
+
           echo "Registry: $(npm config get registry)"
 
-      - name: Verify npm OIDC environment
-        run: |
-          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "ERROR: NODE_AUTH_TOKEN must not be set"
-            exit 1
-          fi
-
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "ERROR: OIDC request URL missing"
-            exit 1
-          fi
-
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
-            echo "ERROR: OIDC request token missing"
-            exit 1
-          fi
-
-          echo "OIDC environment is available"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      - name: Validate npm package
-        run: npm pack --dry-run
-
+      # -------------------------------------
+      # GitHub App authentication
+      # -------------------------------------
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v2
@@ -80,7 +115,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "GitHub App token was not created"
+            echo "ERROR: GitHub App token was not created"
             exit 1
           fi
 
@@ -90,15 +125,15 @@ jobs:
             --fail \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/installation/repositories > /dev/null
+            https://api.github.com/installation/repositories \
+            > /dev/null
 
-          echo "GitHub App token is valid"
+          echo "GitHub App token verified"
 
-      - name: Release
-        if: >
-          github.ref == 'refs/heads/main' &&
-          github.event_name == 'push' &&
-          !startsWith(github.event.head_commit.message, 'gitbot:')
+      # -------------------------------------
+      # RELEASE
+      # -------------------------------------
+      - name: Publish and create GitHub release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: .github/workflows/release.sh
+        run: bash .github/workflows/release.sh

@@ -11,7 +11,7 @@
     "audit": "node src/utils/redis-audit.js"
   },
   "dependencies": {
-    "@arcadia-man/kafka-retrier": "file:../..",
+    "@arcadia-man/kafka-retrier": "1.0.3",
     "kafkajs": "^2.2.4",
     "redis": "^5.9.0"
   }

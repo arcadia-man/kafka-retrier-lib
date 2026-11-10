@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -25,7 +26,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "24"
-          registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
 
       - name: Setup npm
@@ -33,6 +33,10 @@ jobs:
           npm install --global npm@11.9.0
           echo "Node: $(node --version)"
           echo "npm: $(npm --version)"
+
+      - name: Configure npm registry
+        run: |
+          npm config set registry https://registry.npmjs.org/
           echo "Registry: $(npm config get registry)"
 
       - name: Verify npm OIDC environment
@@ -42,15 +46,15 @@ jobs:
             exit 1
           fi
 
-          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL" || {
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
             echo "ERROR: OIDC request URL missing"
             exit 1
-          }
+          fi
 
-          test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" || {
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
             echo "ERROR: OIDC request token missing"
             exit 1
-          }
+          fi
 
           echo "OIDC environment is available"
 
@@ -75,10 +79,10 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          test -n "$GH_TOKEN" || {
+          if [ -z "$GH_TOKEN" ]; then
             echo "GitHub App token was not created"
             exit 1
-          }
+          fi
 
           curl \
             --silent \

@@ -81,6 +81,25 @@ echo "========================================"
 echo "Publishing package to npm"
 echo "========================================"
 
+
+echo "========================================"
+echo "GitHub OIDC identity diagnostics"
+echo "========================================"
+
+echo "Repository:       ${GITHUB_REPOSITORY:-MISSING}"
+echo "Workflow name:    ${GITHUB_WORKFLOW:-MISSING}"
+echo "Workflow ref:     ${GITHUB_WORKFLOW_REF:-MISSING}"
+echo "Git ref:          ${GITHUB_REF:-MISSING}"
+echo "Event:            ${GITHUB_EVENT_NAME:-MISSING}"
+echo "Node:             $(node --version)"
+echo "npm:              $(npm --version)"
+echo "Registry:         $(npm config get registry)"
+
+echo "OIDC URL:         $([ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && echo SET || echo MISSING)"
+echo "OIDC token:       $([ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] && echo SET || echo MISSING)"
+
+echo "========================================"
+
 npm publish --access public
 
 echo "========================================"

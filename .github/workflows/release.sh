@@ -1,133 +1,240 @@
 #!/bin/bash
-set -e
+
+set -euo pipefail
+
+PACKAGE_NAME="@arcadia-man/kafka-retrier"
 
 echo "========================================"
 echo "Starting release"
 echo "========================================"
 
-COMMIT=$(git log -1 --pretty=%B)
+# -----------------------------------------
+# 1. Verify release environment
+# -----------------------------------------
 
-echo "Commit message:"
-echo "$COMMIT"
-
-VERSION=""
-
-if echo "$COMMIT" | grep -qE '^feat!|^fix!|BREAKING CHANGE'; then
-  VERSION=major
-elif echo "$COMMIT" | grep -qE '^feat(\(.+\))?:'; then
-  VERSION=minor
-elif echo "$COMMIT" | grep -qE '^fix(\(.+\))?:'; then
-  VERSION=patch
-fi
-
-echo "Detected release type: ${VERSION:-none}"
-
-if [ -z "$VERSION" ]; then
-  echo "No release required."
-  exit 0
-fi
-
-echo "========================================"
-echo "Release authentication check"
-echo "========================================"
-
-if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
-  echo "ERROR: NODE_AUTH_TOKEN must not be set for npm Trusted Publishing"
+if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+  echo "ERROR: Releases are allowed only from main"
   exit 1
 fi
 
-if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+if [[ "${GITHUB_EVENT_NAME:-}" != "push" ]]; then
+  echo "ERROR: Releases are allowed only for push events"
+  exit 1
+fi
+
+if [[ -z "${GH_TOKEN:-}" ]]; then
+  echo "ERROR: GitHub App token is missing"
+  exit 1
+fi
+
+if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
+  echo "ERROR: NODE_AUTH_TOKEN must not be set"
+  exit 1
+fi
+
+if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
   echo "ERROR: GitHub OIDC request URL is missing"
   exit 1
 fi
 
-if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
   echo "ERROR: GitHub OIDC request token is missing"
   exit 1
 fi
 
-echo "NODE_AUTH_TOKEN: NOT SET"
 echo "GitHub OIDC environment: AVAILABLE"
+echo "GitHub App token: AVAILABLE"
 
-git config user.name "github-actions[bot]"
-git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+# -----------------------------------------
+# 2. Determine release type
+# -----------------------------------------
+
+COMMIT=$(git log -1 --pretty=%B)
+HEADER=$(printf '%s\n' "$COMMIT" | head -n 1)
+
+echo "Commit message:"
+echo "$COMMIT"
+
+echo "Commit subject:"
+echo "$HEADER"
+
+RELEASE_TYPE=""
+
+if printf '%s\n' "$HEADER" | grep -Eq '^[[:alnum:]_-]+(\([^)]*\))?!:' ||
+   printf '%s\n' "$COMMIT" | grep -q '^BREAKING CHANGE:'; then
+
+  RELEASE_TYPE="major"
+
+elif printf '%s\n' "$HEADER" | grep -Eq '^feat(\([^)]*\))?:'; then
+
+  RELEASE_TYPE="minor"
+
+elif printf '%s\n' "$HEADER" | grep -Eq '^fix(\([^)]*\))?:'; then
+
+  RELEASE_TYPE="patch"
+
+fi
+
+echo "Detected release type: ${RELEASE_TYPE:-none}"
+
+if [[ -z "$RELEASE_TYPE" ]]; then
+  echo "No release required."
+  exit 0
+fi
+
+# -----------------------------------------
+# 3. Verify package identity
+# -----------------------------------------
+
+LOCAL_PACKAGE_NAME=$(node -p "require('./package.json').name")
+
+if [[ "$LOCAL_PACKAGE_NAME" != "$PACKAGE_NAME" ]]; then
+  echo "ERROR: Unexpected package name"
+  echo "Expected: $PACKAGE_NAME"
+  echo "Found: $LOCAL_PACKAGE_NAME"
+  exit 1
+fi
+
+# -----------------------------------------
+# 4. Get latest published npm version
+# -----------------------------------------
 
 echo "========================================"
-echo "Syncing with latest main"
+echo "Fetching latest npm version"
 echo "========================================"
 
-git fetch origin main
-git reset --hard origin/main
+LATEST_VERSION=$(npm view "${PACKAGE_NAME}@latest" version)
 
-echo "Current commit:"
-git rev-parse HEAD
+if [[ -z "$LATEST_VERSION" ]]; then
+  echo "ERROR: Could not determine latest npm version"
+  exit 1
+fi
 
-echo "Current package version:"
-node -p "require('./package.json').version"
+echo "Latest published version: $LATEST_VERSION"
+
+# -----------------------------------------
+# 5. Synchronize local version with npm
+# -----------------------------------------
 
 echo "========================================"
-echo "Calculating new version"
+echo "Synchronizing package version"
 echo "========================================"
 
-npm version "$VERSION" --no-git-tag-version
+npm version "$LATEST_VERSION" \
+  --no-git-tag-version \
+  --allow-same-version
+
+# -----------------------------------------
+# 6. Calculate next version
+# -----------------------------------------
+
+echo "========================================"
+echo "Calculating next version"
+echo "========================================"
+
+npm version "$RELEASE_TYPE" --no-git-tag-version
 
 NEW_VERSION=$(node -p "require('./package.json').version")
+
 TAG="v$NEW_VERSION"
 
+echo "Previous npm version: $LATEST_VERSION"
 echo "New package version: $NEW_VERSION"
 echo "Release tag: $TAG"
 
-echo "========================================"
-echo "Publishing package to npm"
-echo "========================================"
+# -----------------------------------------
+# 7. Check tag before publishing
+# -----------------------------------------
 
+if git show-ref --verify --quiet "refs/tags/$TAG"; then
+  echo "ERROR: Git tag $TAG already exists"
+  echo "Stopping before npm publication"
+  exit 1
+fi
 
-echo "========================================"
-echo "GitHub OIDC identity diagnostics"
-echo "========================================"
-
-echo "Repository:       ${GITHUB_REPOSITORY:-MISSING}"
-echo "Workflow name:    ${GITHUB_WORKFLOW:-MISSING}"
-echo "Workflow ref:     ${GITHUB_WORKFLOW_REF:-MISSING}"
-echo "Git ref:          ${GITHUB_REF:-MISSING}"
-echo "Event:            ${GITHUB_EVENT_NAME:-MISSING}"
-echo "Node:             $(node --version)"
-echo "npm:              $(npm --version)"
-echo "Registry:         $(npm config get registry)"
-
-echo "OIDC URL:         $([ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && echo SET || echo MISSING)"
-echo "OIDC token:       $([ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] && echo SET || echo MISSING)"
+# -----------------------------------------
+# 8. Publish to npm using GitHub OIDC
+# -----------------------------------------
 
 echo "========================================"
+echo "Publishing to npm"
+echo "========================================"
+
+echo "Repository: ${GITHUB_REPOSITORY:-MISSING}"
+echo "Workflow: ${GITHUB_WORKFLOW:-MISSING}"
+echo "Workflow ref: ${GITHUB_WORKFLOW_REF:-MISSING}"
+echo "Node: $(node --version)"
+echo "npm: $(npm --version)"
 
 npm publish --access public
 
 echo "========================================"
-echo "npm publish succeeded"
+echo "npm publish command succeeded"
 echo "========================================"
+
+# -----------------------------------------
+# 9. Verify npm publication
+# -----------------------------------------
 
 echo "Verifying published version..."
 
-PUBLISHED_VERSION=$(npm view "@arcadia-man/kafka-retrier@$NEW_VERSION" version)
+PUBLISHED_VERSION=""
 
-if [ "$PUBLISHED_VERSION" != "$NEW_VERSION" ]; then
-  echo "ERROR: npm published version verification failed"
+for attempt in $(seq 1 12); do
+
+  if PUBLISHED_VERSION=$(npm view "${PACKAGE_NAME}@${NEW_VERSION}" version 2>/dev/null); then
+
+    if [[ "$PUBLISHED_VERSION" == "$NEW_VERSION" ]]; then
+      break
+    fi
+
+  fi
+
+  echo "Publication not yet visible. Attempt $attempt/12"
+
+  sleep 5
+
+done
+
+if [[ "$PUBLISHED_VERSION" != "$NEW_VERSION" ]]; then
+  echo "ERROR: npm publication verification failed"
   echo "Expected: $NEW_VERSION"
-  echo "Found: $PUBLISHED_VERSION"
+  echo "Found: ${PUBLISHED_VERSION:-NOT AVAILABLE}"
   exit 1
 fi
 
-echo "npm published version: $PUBLISHED_VERSION"
+echo "Verified npm version: $PUBLISHED_VERSION"
+
+# -----------------------------------------
+# 10. Configure Git identity
+# -----------------------------------------
 
 echo "========================================"
-echo "Creating release commit"
+echo "Preparing release commit"
 echo "========================================"
+
+git config user.name "github-actions[bot]"
+
+git config user.email \
+  "41898282+github-actions[bot]@users.noreply.github.com"
+
+# -----------------------------------------
+# 11. Commit version update
+# -----------------------------------------
 
 git add package.json package-lock.json
 
 git commit -m "gitbot: release $NEW_VERSION"
 
+# -----------------------------------------
+# 12. Create Git tag
+# -----------------------------------------
+
 git tag -a "$TAG" -m "gitbot: release $NEW_VERSION"
+
+# -----------------------------------------
+# 13. Push commit using GitHub App
+# -----------------------------------------
 
 echo "========================================"
 echo "Pushing release commit"
@@ -137,13 +244,21 @@ git config --global \
   url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
   "https://github.com/"
 
-git push origin main
+git push origin HEAD:main
+
+# -----------------------------------------
+# 14. Push tag
+# -----------------------------------------
 
 echo "========================================"
 echo "Pushing release tag"
 echo "========================================"
 
 git push origin "$TAG"
+
+# -----------------------------------------
+# 15. Create GitHub Release
+# -----------------------------------------
 
 echo "========================================"
 echo "Creating GitHub Release"
@@ -153,10 +268,14 @@ gh release create "$TAG" \
   --title "$TAG" \
   --generate-notes
 
+# -----------------------------------------
+# SUCCESS
+# -----------------------------------------
+
 echo "========================================"
-echo "Release completed successfully"
+echo "RELEASE COMPLETED SUCCESSFULLY"
 echo "========================================"
 
-echo "Package: @arcadia-man/kafka-retrier"
+echo "Package: $PACKAGE_NAME"
 echo "Version: $NEW_VERSION"
 echo "Tag: $TAG"

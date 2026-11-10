@@ -47,29 +47,30 @@ echo "GitHub App token: AVAILABLE"
 
 # -----------------------------------------
 # 2. Determine release type
+# Supports normal commits and merge commits
 # -----------------------------------------
 
 COMMIT=$(git log -1 --pretty=%B)
-HEADER=$(printf '%s\n' "$COMMIT" | head -n 1)
 
 echo "Commit message:"
 echo "$COMMIT"
 
-echo "Commit subject:"
-echo "$HEADER"
-
 RELEASE_TYPE=""
 
-if printf '%s\n' "$HEADER" | grep -Eq '^[[:alnum:]_-]+(\([^)]*\))?!:' ||
-   printf '%s\n' "$COMMIT" | grep -q '^BREAKING CHANGE:'; then
+if printf '%s\n' "$COMMIT" |
+     grep -Eq '^[[:alnum:]_-]+(\([^)]*\))?!:' ||
+   printf '%s\n' "$COMMIT" |
+     grep -q '^BREAKING CHANGE:'; then
 
   RELEASE_TYPE="major"
 
-elif printf '%s\n' "$HEADER" | grep -Eq '^feat(\([^)]*\))?:'; then
+elif printf '%s\n' "$COMMIT" |
+       grep -Eq '^feat(\([^)]*\))?:'; then
 
   RELEASE_TYPE="minor"
 
-elif printf '%s\n' "$HEADER" | grep -Eq '^fix(\([^)]*\))?:'; then
+elif printf '%s\n' "$COMMIT" |
+       grep -Eq '^fix(\([^)]*\))?:'; then
 
   RELEASE_TYPE="patch"
 

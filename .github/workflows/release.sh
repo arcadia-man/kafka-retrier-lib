@@ -30,12 +30,24 @@ fi
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+echo "========================================"
+echo "Syncing with latest main"
+echo "========================================"
+
+git fetch origin main
+git reset --hard origin/main
+
+echo "Current commit:"
+git rev-parse HEAD
+
 echo "Current package version:"
 node -p "require('./package.json').version"
 
-echo "Running npm version: $VERSION"
+echo "========================================"
+echo "Calculating new version"
+echo "========================================"
 
-npm version "$VERSION" -m "gitbot: release %s"
+npm version "$VERSION" --no-git-tag-version
 
 NEW_VERSION=$(node -p "require('./package.json').version")
 TAG="v$NEW_VERSION"
@@ -43,22 +55,43 @@ TAG="v$NEW_VERSION"
 echo "New package version: $NEW_VERSION"
 echo "Release tag: $TAG"
 
-git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
-echo "Syncing main before pushing version commit and tag..."
-
-git fetch origin main
-git rebase origin/main
-
-echo "Pushing version commit and tag..."
-
-git push origin main --follow-tags
-
-echo "Publishing package to npm..."
+echo "========================================"
+echo "Publishing package to npm"
+echo "========================================"
 
 npm publish --access public
 
-echo "Creating GitHub Release..."
+echo "========================================"
+echo "npm publish succeeded"
+echo "========================================"
+
+echo "Published version:"
+npm view "@arcadia-man/kafka-retrier@$NEW_VERSION" version
+
+echo "========================================"
+echo "Creating release commit"
+echo "========================================"
+
+git add package.json package-lock.json
+
+git commit -m "gitbot: release $NEW_VERSION"
+
+git tag -a "$TAG" -m "gitbot: release $NEW_VERSION"
+
+echo "========================================"
+echo "Pushing release commit and tag"
+echo "========================================"
+
+git config --global \
+  url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+  "https://github.com/"
+
+git push origin main
+git push origin "$TAG"
+
+echo "========================================"
+echo "Creating GitHub Release"
+echo "========================================"
 
 gh release create "$TAG" \
   --title "$TAG" \
@@ -67,3 +100,6 @@ gh release create "$TAG" \
 echo "========================================"
 echo "Release completed successfully"
 echo "========================================"
+
+echo "Version: $NEW_VERSION"
+echo "Tag: $TAG"

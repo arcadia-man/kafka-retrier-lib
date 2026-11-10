@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 set -euo pipefail
@@ -45,9 +46,6 @@ echo "========================================"
 
 npm config set registry https://registry.npmjs.org/
 
-# npm reads the token from the environment.
-# The actual token is never written into this file.
-
 printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' \
   > "$HOME/.npmrc"
 
@@ -64,13 +62,16 @@ echo "Commit message:"
 echo "$COMMIT"
 
 COMMIT_SUBJECT=$(printf '%s\n' "$COMMIT" | sed -n '1p')
-MERGE_SUBJECT=$(printf '%s\n' "$COMMIT" | sed -n '2p')
-
 RELEASE_SUBJECT="$COMMIT_SUBJECT"
 
 if [[ "$COMMIT_SUBJECT" == Merge\ pull\ request* ||
       "$COMMIT_SUBJECT" == Merge\ branch* ]]; then
-  RELEASE_SUBJECT="$MERGE_SUBJECT"
+
+  RELEASE_SUBJECT=$(
+    printf '%s\n' "$COMMIT" |
+      sed '1d; /^[[:space:]]*$/d' |
+      sed -n '1p'
+  )
 fi
 
 echo "Release commit subject: $RELEASE_SUBJECT"
@@ -293,9 +294,4 @@ gh release create "$TAG" \
 # -----------------------------------------
 
 echo "========================================"
-echo "RELEASE COMPLETED SUCCESSFULLY"
-echo "========================================"
-
-echo "Package: $PACKAGE_NAME"
-echo "Version: $NEW_VERSION"
-echo "Tag: $TAG"
+echo "RELEASE COMPLETED

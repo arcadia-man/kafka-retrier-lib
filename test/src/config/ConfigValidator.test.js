@@ -281,3 +281,16 @@ test("rejects enabled DLQ stage when topic does not match DLQ topic", () => {
 
     assert.throws(() => ConfigValidator.validate(config), { message: 'Consumer "order-create": DLQ stage consumer topic must match dlq.topic' });
 });
+
+test("accepts fixed retry strategy with delayMs", () => {
+    const config = createValidConfig();
+    config.consumers[0].retry = {
+        enabled: true,
+        topic: "order-create.retry",
+        strategy: "fixed",
+        maxAttempts: 3,
+        delayMs: 3000
+    };
+
+    assert.equal(ConfigValidator.validate(config), true);
+});

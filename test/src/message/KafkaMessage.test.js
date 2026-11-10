@@ -114,3 +114,30 @@ test("keeps metadata isolated between message instances", () => {
     assert.deepEqual(message1.meta.headers, { source: "message-1" });
     assert.deepEqual(message2.meta.headers, {});
 });
+
+test("provides direct property access via getters", () => {
+    const message = new KafkaMessage({
+        data: { id: 123 },
+        messageId: "msg-123",
+        topic: "orders",
+        partition: 2,
+        offset: "456",
+        key: "order-123",
+        headers: { "x-trace-id": "trace-1" },
+        consumer: "order-consumer",
+        stage: "retry",
+        original: { topic: "orders", partition: 2, offset: "100" },
+        retry: { attempt: 2 }
+    });
+
+    assert.equal(message.messageId, "msg-123");
+    assert.equal(message.topic, "orders");
+    assert.equal(message.partition, 2);
+    assert.equal(message.offset, "456");
+    assert.equal(message.key, "order-123");
+    assert.deepEqual(message.headers, { "x-trace-id": "trace-1" });
+    assert.equal(message.consumer, "order-consumer");
+    assert.equal(message.stage, "retry");
+    assert.deepEqual(message.original, { topic: "orders", partition: 2, offset: "100" });
+    assert.deepEqual(message.retry, { attempt: 2 });
+});

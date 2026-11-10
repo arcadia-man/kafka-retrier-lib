@@ -103,6 +103,20 @@ test("saves and gets retry data", async () => {
     assert.deepEqual(await store.get("retry-1"), retryData);
 });
 
+test("saves retry data with TTL option", async () => {
+    let capturedOptions = null;
+    const redis = {
+        async set(key, value, options) {
+            capturedOptions = options;
+        },
+        async get() { return null; }
+    };
+    const store = new RetryStore(redis);
+    await store.save("retry-1", { foo: "bar" }, 3600);
+
+    assert.deepEqual(capturedOptions, { EX: 3600 });
+});
+
 test("returns null when retry data does not exist", async () => {
     const { redis } = createStore();
     const store = new RetryStore(redis);

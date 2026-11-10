@@ -1,0 +1,18 @@
+{
+  "name": "kafka-retrier-advanced-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ten-topic integration test for @arcadia-man/kafka-retrier",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "seed": "node src/seed/index.js",
+    "reset": "node src/utils/reset-env.js",
+    "audit": "node src/utils/redis-audit.js"
+  },
+  "dependencies": {
+    "@arcadia-man/kafka-retrier": "file:../..",
+    "kafkajs": "^2.2.4",
+    "redis": "^5.9.0"
+  }
+}

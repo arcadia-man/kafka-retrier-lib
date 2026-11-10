@@ -17,7 +17,7 @@ class RetryStore {
         return `${RetryStore.keys.RETRY_DATA_PREFIX}${retryId}`;
     }
 
-    async save(retryId, retryData) {
+    async save(retryId, retryData, ttlSeconds = 86400) {
         if (!retryId) {
             throw new Error("Retry ID is required");
         }
@@ -26,10 +26,14 @@ class RetryStore {
             throw new Error("Retry data is required");
         }
 
-        await this.redis.set(
-            this.getDataKey(retryId),
-            JSON.stringify(retryData)
-        );
+        const serialized = JSON.stringify(retryData);
+        const dataKey = this.getDataKey(retryId);
+
+        if (ttlSeconds && Number.isInteger(ttlSeconds) && ttlSeconds > 0) {
+            await this.redis.set(dataKey, serialized, { EX: ttlSeconds });
+        } else {
+            await this.redis.set(dataKey, serialized);
+        }
     }
 
     async get(retryId) {

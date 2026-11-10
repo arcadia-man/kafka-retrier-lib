@@ -82,10 +82,22 @@ class ConfigValidator {
         if (!["fixed", "exponential"].includes(retry.strategy)) throw new Error(`${prefix}: retry.strategy must be "fixed" or "exponential"`);
 
         this.validatePositiveInteger(retry.maxAttempts, `${prefix}: retry.maxAttempts`, { min: 1 });
-        this.validatePositiveInteger(retry.initialDelayMs, `${prefix}: retry.initialDelayMs`, { min: 1 });
-        this.validatePositiveInteger(retry.maxDelayMs, `${prefix}: retry.maxDelayMs`, { min: 1 });
 
-        if (retry.initialDelayMs > retry.maxDelayMs) throw new Error(`${prefix}: retry.initialDelayMs cannot be greater than retry.maxDelayMs`);
+        if (retry.strategy === "fixed" && retry.delayMs !== undefined) {
+            this.validatePositiveInteger(retry.delayMs, `${prefix}: retry.delayMs`, { min: 1 });
+        }
+
+        if (retry.strategy !== "fixed" || retry.delayMs === undefined || retry.initialDelayMs !== undefined) {
+            this.validatePositiveInteger(retry.initialDelayMs, `${prefix}: retry.initialDelayMs`, { min: 1 });
+        }
+
+        if (retry.strategy !== "fixed" || retry.delayMs === undefined || retry.maxDelayMs !== undefined) {
+            this.validatePositiveInteger(retry.maxDelayMs, `${prefix}: retry.maxDelayMs`, { min: 1 });
+        }
+
+        if (retry.initialDelayMs !== undefined && retry.maxDelayMs !== undefined && retry.initialDelayMs > retry.maxDelayMs) {
+            throw new Error(`${prefix}: retry.initialDelayMs cannot be greater than retry.maxDelayMs`);
+        }
     }
 
     static validateDlq(dlq, prefix) {

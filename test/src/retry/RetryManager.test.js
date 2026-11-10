@@ -226,3 +226,38 @@ test("requires DLQ topic when retry is disabled", async () => {
 
     await assert.rejects(() => manager.retry(createMessage(), new Error("failed")), { message: "DLQ topic is required when message is sent to DLQ" });
 });
+
+test("supports fixed retry strategy with delayMs shorthand", async () => {
+    const retryStore = createRetryStore();
+    const manager = new RetryManager({
+        retry: {
+            enabled: true,
+            topic: "order-create.retry",
+            strategy: "fixed",
+            maxAttempts: 3,
+            delayMs: 5000
+        },
+        dlq: { enabled: true, topic: "order-create.dlq" }
+    }, retryStore);
+
+    const result = await manager.retry(createMessage(), new Error("failed"));
+    assert.equal(result.action, "retry");
+    assert.equal(result.delayMs, 5000);
+});
+
+test("cleans up saved retry data if schedule throws", async () => {
+    const completed = [];
+    const retryStore = {
+        async save() {},
+        async schedule() {
+            throw new Error("Redis write failed");
+        },
+        async complete(id) {
+            completed.push(id);
+        }
+    };
+
+    const manager = new RetryManager(createConfig(), retryStore);
+    await assert.rejects(() => manager.retry(createMessage(), new Error("failed")), { message: "Redis write failed" });
+    assert.equal(completed.length, 1);
+});

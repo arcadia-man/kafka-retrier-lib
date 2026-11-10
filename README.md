@@ -272,56 +272,48 @@ Run tests:
 npm test
 ~~~
 
+Run code linter:
+
+~~~bash
+npm run lint
+~~~
+
+Fix lint issues automatically:
+
+~~~bash
+npm run lint:fix
+~~~
+
 Validate the npm package:
 
 ~~~bash
 npm pack --dry-run
 ~~~
 
-## Versioning
+## Versioning & CI/CD Commit Rules
 
-This project follows Semantic Versioning.
+This project follows Semantic Versioning (`MAJOR.MINOR.PATCH`). Releases and npm publications are triggered automatically via GitHub Actions CI (`.github/workflows/ci.yml` and `release.sh`) when commits are pushed to the `main` branch.
 
-~~~text
-MAJOR.MINOR.PATCH
-~~~
+### Commit Message Rules
 
-Examples:
+Your commit subject determines whether a release is published and what version bump is applied:
 
-~~~text
-1.0.0
-1.0.1
-1.1.0
-2.0.0
-~~~
+| Commit Format | Release Type | Example Commit Subject | Version Result (e.g. from 1.0.1) |
+|---|---|---|---|
+| `fix:` or `fix(scope):` | **Patch** release | `fix: prevent redis memory leak by adding ttl` | `1.0.2` |
+| `feat:` or `feat(scope):` | **Minor** release | `feat: add direct message property getters` | `1.1.0` |
+| `feat!:` / `<type>!:` or `BREAKING CHANGE:` in commit body | **Major** release | `feat!: redesign retry strategy options` | `2.0.0` |
+| `docs:`, `chore:`, `test:`, `refactor:`, `style:`, `ci:` | **No release** | `docs: update commit guidelines` | No release triggered |
+| Commits starting with `gitbot:` | **Skipped** | `gitbot: release 1.0.2` | Automated release commit |
 
-Release versions are determined automatically from commit messages.
+### CI Workflow Validation Steps
 
-~~~text
-fix: correct retry scheduling
-~~~
-
-Creates a patch release.
-
-~~~text
-feat: add exponential retry
-~~~
-
-Creates a minor release.
-
-~~~text
-feat!: change retry configuration API
-~~~
-
-Creates a major release.
-
-Automated release commits use the `gitbot:` prefix.
-
-Example:
-
-~~~text
-gitbot: release 1.1.0
-~~~
+On every Pull Request and Push to `main`, CI executes:
+1. `npm ci` - installs dependencies cleanly
+2. `npm run lint` - executes ESLint checks across codebase
+3. `npm test` - executes all 141+ unit tests
+4. `npm pack --dry-run` - validates package packing and files array
+5. If on `main` branch and commit is a `fix`, `feat`, or breaking change, CI automatically bumps the version, publishes to npm, and creates a GitHub release.
 
 ## Repository
 

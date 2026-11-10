@@ -22,10 +22,13 @@ class RetryManager {
 
         if (nextAttempt > retryConfig.maxAttempts) return this.createDlqJob(message, error, "max_attempts_exceeded");
 
+        const initialDelayMs = retryConfig.initialDelayMs ?? retryConfig.delayMs;
+        const maxDelayMs = retryConfig.maxDelayMs ?? retryConfig.delayMs;
+
         const delayMs = this.calculateDelay({
             strategy: retryConfig.strategy,
-            initialDelayMs: retryConfig.initialDelayMs,
-            maxDelayMs: retryConfig.maxDelayMs,
+            initialDelayMs,
+            maxDelayMs,
             attempt: nextAttempt
         });
 
@@ -46,14 +49,23 @@ class RetryManager {
             retryTopic: retryConfig.topic,
             dlqTopic: this.config.dlq?.topic ?? null,
             strategy: retryConfig.strategy,
-            initialDelayMs: retryConfig.initialDelayMs,
-            maxDelayMs: retryConfig.maxDelayMs,
+            initialDelayMs,
+            maxDelayMs,
             createdAt: now,
             nextRetryAt
         };
 
-        await this.retryStore.save(retryId, retryData);
-        await this.retryStore.schedule(retryId, nextRetryAt);
+        const ttlSeconds = Math.max(86400, Math.ceil((delayMs + 60000) / 1000) * 2);
+        await this.retryStore.save(retryId, retryData, ttlSeconds);
+
+        try {
+            await this.retryStore.schedule(retryId, nextRetryAt);
+        } catch (scheduleError) {
+            if (typeof this.retryStore.complete === "function") {
+                await this.retryStore.complete(retryId).catch(() => {});
+            }
+            throw scheduleError;
+        }
 
         return {
             action: "retry",
@@ -89,8 +101,17 @@ class RetryManager {
             nextRetryAt: now
         };
 
-        await this.retryStore.save(retryId, retryData);
-        await this.retryStore.schedule(retryId, now);
+        const ttlSeconds = 86400;
+        await this.retryStore.save(retryId, retryData, ttlSeconds);
+
+        try {
+            await this.retryStore.schedule(retryId, now);
+        } catch (scheduleError) {
+            if (typeof this.retryStore.complete === "function") {
+                await this.retryStore.complete(retryId).catch(() => {});
+            }
+            throw scheduleError;
+        }
 
         return {
             action: "dlq",
@@ -100,9 +121,16 @@ class RetryManager {
     }
 
     calculateDelay({ strategy, initialDelayMs, maxDelayMs, attempt }) {
-        if (strategy === "fixed") return Math.min(initialDelayMs, maxDelayMs);
+        if (strategy === "fixed") {
+            const delay = initialDelayMs ?? maxDelayMs;
+            if (delay === undefined) throw new Error("Fixed retry strategy requires delayMs or initialDelayMs");
+            return Math.min(initialDelayMs ?? delay, maxDelayMs ?? delay);
+        }
 
         if (strategy === "exponential") {
+            if (initialDelayMs === undefined || maxDelayMs === undefined) {
+                throw new Error("Exponential retry strategy requires initialDelayMs and maxDelayMs");
+            }
             const delay = initialDelayMs * 2 ** (attempt - 1);
             return Math.min(delay, maxDelayMs);
         }

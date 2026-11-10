@@ -125,6 +125,26 @@ test("publishes retry metadata in Kafka headers", async () => {
     });
 });
 
+test("preserves custom user headers when publishing retry", async () => {
+    const retryData = createRetryData();
+    retryData.message.meta.headers = {
+        "test-run-id": "run-42",
+        "correlation-id": "corr-99"
+    };
+    const retryStore = createRetryStore(retryData);
+    retryStore.dueRetries = ["retry-1"];
+
+    const producer = createProducer();
+    const worker = new RetryWorker(retryStore, producer);
+
+    await worker.process();
+
+    const sentHeaders = producer.sent[0].messages[0].headers;
+    assert.equal(sentHeaders["test-run-id"], "run-42");
+    assert.equal(sentHeaders["correlation-id"], "corr-99");
+    assert.equal(sentHeaders["retry-attempt"], "1");
+});
+
 test("publishes DLQ message", async () => {
     const retryData = createRetryData({ action: "dlq", reason: "max_attempts_exceeded" });
     const retryStore = createRetryStore(retryData);

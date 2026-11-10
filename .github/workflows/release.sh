@@ -27,26 +27,34 @@ if [[ -z "${GH_TOKEN:-}" ]]; then
   exit 1
 fi
 
-if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
-  echo "ERROR: NODE_AUTH_TOKEN must not be set"
+if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+  echo "ERROR: npm authentication token is missing"
   exit 1
 fi
 
-if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
-  echo "ERROR: GitHub OIDC request URL is missing"
-  exit 1
-fi
-
-if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
-  echo "ERROR: GitHub OIDC request token is missing"
-  exit 1
-fi
-
-echo "GitHub OIDC environment: AVAILABLE"
 echo "GitHub App token: AVAILABLE"
+echo "npm authentication token: AVAILABLE"
 
 # -----------------------------------------
-# 2. Determine release type
+# 2. Configure npm authentication
+# -----------------------------------------
+
+echo "========================================"
+echo "Configuring npm authentication"
+echo "========================================"
+
+npm config set registry https://registry.npmjs.org/
+
+# npm reads the token from the environment.
+# The actual token is never written into this file.
+
+printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' \
+  > "$HOME/.npmrc"
+
+echo "npm registry authentication configured"
+
+# -----------------------------------------
+# 3. Determine release type
 # Supports normal commits and merge commits
 # -----------------------------------------
 
@@ -55,21 +63,33 @@ COMMIT=$(git log -1 --pretty=%B)
 echo "Commit message:"
 echo "$COMMIT"
 
+COMMIT_SUBJECT=$(printf '%s\n' "$COMMIT" | sed -n '1p')
+MERGE_SUBJECT=$(printf '%s\n' "$COMMIT" | sed -n '2p')
+
+RELEASE_SUBJECT="$COMMIT_SUBJECT"
+
+if [[ "$COMMIT_SUBJECT" == Merge\ pull\ request* ||
+      "$COMMIT_SUBJECT" == Merge\ branch* ]]; then
+  RELEASE_SUBJECT="$MERGE_SUBJECT"
+fi
+
+echo "Release commit subject: $RELEASE_SUBJECT"
+
 RELEASE_TYPE=""
 
-if printf '%s\n' "$COMMIT" |
+if printf '%s\n' "$RELEASE_SUBJECT" |
      grep -Eq '^[[:alnum:]_-]+(\([^)]*\))?!:' ||
    printf '%s\n' "$COMMIT" |
      grep -q '^BREAKING CHANGE:'; then
 
   RELEASE_TYPE="major"
 
-elif printf '%s\n' "$COMMIT" |
+elif printf '%s\n' "$RELEASE_SUBJECT" |
        grep -Eq '^feat(\([^)]*\))?:'; then
 
   RELEASE_TYPE="minor"
 
-elif printf '%s\n' "$COMMIT" |
+elif printf '%s\n' "$RELEASE_SUBJECT" |
        grep -Eq '^fix(\([^)]*\))?:'; then
 
   RELEASE_TYPE="patch"
@@ -84,7 +104,7 @@ if [[ -z "$RELEASE_TYPE" ]]; then
 fi
 
 # -----------------------------------------
-# 3. Verify package identity
+# 4. Verify package identity
 # -----------------------------------------
 
 LOCAL_PACKAGE_NAME=$(node -p "require('./package.json').name")
@@ -97,7 +117,7 @@ if [[ "$LOCAL_PACKAGE_NAME" != "$PACKAGE_NAME" ]]; then
 fi
 
 # -----------------------------------------
-# 4. Get latest published npm version
+# 5. Get latest published npm version
 # -----------------------------------------
 
 echo "========================================"
@@ -114,7 +134,7 @@ fi
 echo "Latest published version: $LATEST_VERSION"
 
 # -----------------------------------------
-# 5. Synchronize local version with npm
+# 6. Synchronize local version with npm
 # -----------------------------------------
 
 echo "========================================"
@@ -126,7 +146,7 @@ npm version "$LATEST_VERSION" \
   --allow-same-version
 
 # -----------------------------------------
-# 6. Calculate next version
+# 7. Calculate next version
 # -----------------------------------------
 
 echo "========================================"
@@ -144,7 +164,7 @@ echo "New package version: $NEW_VERSION"
 echo "Release tag: $TAG"
 
 # -----------------------------------------
-# 7. Check tag before publishing
+# 8. Check tag before publishing
 # -----------------------------------------
 
 if git show-ref --verify --quiet "refs/tags/$TAG"; then
@@ -154,16 +174,15 @@ if git show-ref --verify --quiet "refs/tags/$TAG"; then
 fi
 
 # -----------------------------------------
-# 8. Publish to npm using GitHub OIDC
+# 9. Publish to npm
 # -----------------------------------------
 
 echo "========================================"
 echo "Publishing to npm"
 echo "========================================"
 
-echo "Repository: ${GITHUB_REPOSITORY:-MISSING}"
-echo "Workflow: ${GITHUB_WORKFLOW:-MISSING}"
-echo "Workflow ref: ${GITHUB_WORKFLOW_REF:-MISSING}"
+echo "Package: $PACKAGE_NAME"
+echo "Version: $NEW_VERSION"
 echo "Node: $(node --version)"
 echo "npm: $(npm --version)"
 
@@ -174,7 +193,7 @@ echo "npm publish command succeeded"
 echo "========================================"
 
 # -----------------------------------------
-# 9. Verify npm publication
+# 10. Verify npm publication
 # -----------------------------------------
 
 echo "Verifying published version..."
@@ -207,7 +226,7 @@ fi
 echo "Verified npm version: $PUBLISHED_VERSION"
 
 # -----------------------------------------
-# 10. Configure Git identity
+# 11. Configure Git identity
 # -----------------------------------------
 
 echo "========================================"
@@ -220,7 +239,7 @@ git config user.email \
   "41898282+github-actions[bot]@users.noreply.github.com"
 
 # -----------------------------------------
-# 11. Commit version update
+# 12. Commit version update
 # -----------------------------------------
 
 git add package.json package-lock.json
@@ -228,13 +247,13 @@ git add package.json package-lock.json
 git commit -m "gitbot: release $NEW_VERSION"
 
 # -----------------------------------------
-# 12. Create Git tag
+# 13. Create Git tag
 # -----------------------------------------
 
 git tag -a "$TAG" -m "gitbot: release $NEW_VERSION"
 
 # -----------------------------------------
-# 13. Push commit using GitHub App
+# 14. Push commit using GitHub App
 # -----------------------------------------
 
 echo "========================================"
@@ -248,7 +267,7 @@ git config --global \
 git push origin HEAD:main
 
 # -----------------------------------------
-# 14. Push tag
+# 15. Push tag
 # -----------------------------------------
 
 echo "========================================"
@@ -258,7 +277,7 @@ echo "========================================"
 git push origin "$TAG"
 
 # -----------------------------------------
-# 15. Create GitHub Release
+# 16. Create GitHub Release
 # -----------------------------------------
 
 echo "========================================"

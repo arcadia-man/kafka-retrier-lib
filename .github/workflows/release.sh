@@ -205,7 +205,7 @@ echo "========================================"
 
 PUBLISHED_VERSION=""
 
-for attempt in {1..5}; do
+for attempt in {1..10}; do
 
   echo "Verification attempt $attempt/5..."
 

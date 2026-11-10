@@ -14,11 +14,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    env:
-      # Trusted Publishing uses GitHub OIDC.
-      # Do not use an npm token for publishing.
-      NODE_AUTH_TOKEN: ""
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -27,62 +22,37 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
+          registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
 
       - name: Setup npm
         run: |
           npm install --global npm@11.9.0
-          echo "Node:"
-          node --version
-          echo "npm:"
-          npm --version
-
-      - name: Configure npm registry
-        run: |
-          npm config set registry https://registry.npmjs.org/
-
-          echo "Registry:"
-          npm config get registry
+          echo "Node: $(node --version)"
+          echo "npm: $(npm --version)"
+          echo "Registry: $(npm config get registry)"
 
       - name: Verify npm OIDC environment
         run: |
-          echo "========================================"
-          echo "npm OIDC verification"
-          echo "========================================"
-
-          echo "NODE_AUTH_TOKEN:"
           if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "ERROR: NODE_AUTH_TOKEN is set"
-            exit 1
-          else
-            echo "NOT SET"
-          fi
-
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL:"
-          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "SET"
-          else
-            echo "NOT SET"
+            echo "ERROR: NODE_AUTH_TOKEN must not be set"
             exit 1
           fi
 
-          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN:"
-          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
-            echo "SET"
-          else
-            echo "NOT SET"
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL" || {
+            echo "ERROR: OIDC request URL missing"
             exit 1
-          fi
+          }
 
-          echo "npm registry:"
-          npm config get registry
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" || {
+            echo "ERROR: OIDC request token missing"
+            exit 1
+          }
 
-          echo "========================================"
-          echo "OIDC environment looks correct"
-          echo "========================================"
+          echo "OIDC environment is available"
 
       - name: Install dependencies
         run: npm ci
@@ -105,12 +75,10 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
+          test -n "$GH_TOKEN" || {
             echo "GitHub App token was not created"
             exit 1
-          fi
-
-          echo "GitHub App token exists: YES"
+          }
 
           curl \
             --silent \
@@ -120,7 +88,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/installation/repositories > /dev/null
 
-          echo "GitHub App token is valid."
+          echo "GitHub App token is valid"
 
       - name: Release
         if: >
@@ -129,5 +97,4 @@ jobs:
           !startsWith(github.event.head_commit.message, 'gitbot:')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          NODE_AUTH_TOKEN: ""
         run: .github/workflows/release.sh

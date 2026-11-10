@@ -76,6 +76,12 @@ class RetryWorker {
         }
     }
 
+    serializeValue(value) {
+        if (value === null || value === undefined) return null;
+        if (typeof value === "object") return JSON.stringify(value);
+        return String(value);
+    }
+
     async publishRetry(retryData) {
         if (!retryData.retryTopic) throw new Error("Retry topic is required");
 
@@ -85,8 +91,9 @@ class RetryWorker {
             topic: retryData.retryTopic,
             messages: [{
                 key: message.meta?.key ?? null,
-                value: JSON.stringify(message.data),
+                value: this.serializeValue(message.data),
                 headers: {
+                    ...(message.meta?.headers ?? {}),
                     "message-id": message.meta?.messageId ?? "",
                     stage: "retry",
                     "original-topic": message.meta?.original?.topic ?? message.meta?.topic ?? "",
@@ -112,8 +119,9 @@ class RetryWorker {
             topic: retryData.dlqTopic,
             messages: [{
                 key: message.meta?.key ?? null,
-                value: JSON.stringify(message.data),
+                value: this.serializeValue(message.data),
                 headers: {
+                    ...(message.meta?.headers ?? {}),
                     "message-id": message.meta?.messageId ?? "",
                     stage: "dlq",
                     "original-topic": message.meta?.original?.topic ?? message.meta?.topic ?? "",

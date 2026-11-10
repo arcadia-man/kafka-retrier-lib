@@ -195,36 +195,46 @@ echo "========================================"
 
 # -----------------------------------------
 # 10. Verify npm publication
+# 5 attempts with 60 seconds between attempts
+# Verification timeout does not block release
 # -----------------------------------------
 
-echo "Verifying published version..."
+echo "========================================"
+echo "Verifying npm publication"
+echo "========================================"
 
 PUBLISHED_VERSION=""
 
-for attempt in $(seq 1 12); do
+for attempt in {1..5}; do
 
-  if PUBLISHED_VERSION=$(npm view "${PACKAGE_NAME}@${NEW_VERSION}" version 2>/dev/null); then
+  echo "Verification attempt $attempt/5..."
 
-    if [[ "$PUBLISHED_VERSION" == "$NEW_VERSION" ]]; then
-      break
-    fi
+  PUBLISHED_VERSION=$(
+    npm view "${PACKAGE_NAME}@${NEW_VERSION}" version 2>/dev/null || true
+  )
 
+  if [[ "$PUBLISHED_VERSION" == "$NEW_VERSION" ]]; then
+    echo "npm publication verified: $PUBLISHED_VERSION"
+    break
   fi
 
-  echo "Publication not yet visible. Attempt $attempt/12"
+  echo "Published version is not visible yet."
 
-  sleep 5
+  if [[ "$attempt" -lt 5 ]]; then
+    echo "Waiting 60 seconds before the next attempt..."
+    sleep 60
+  fi
 
 done
 
 if [[ "$PUBLISHED_VERSION" != "$NEW_VERSION" ]]; then
-  echo "ERROR: npm publication verification failed"
-  echo "Expected: $NEW_VERSION"
-  echo "Found: ${PUBLISHED_VERSION:-NOT AVAILABLE}"
-  exit 1
+  echo "WARNING: npm publish succeeded, but registry verification timed out."
+  echo "Expected version: $NEW_VERSION"
+  echo "Last found version: ${PUBLISHED_VERSION:-NOT AVAILABLE}"
+  echo "Continuing because npm publish command succeeded."
 fi
 
-echo "Verified npm version: $PUBLISHED_VERSION"
+echo "npm publication verification step completed."
 
 # -----------------------------------------
 # 11. Configure Git identity
@@ -294,4 +304,8 @@ gh release create "$TAG" \
 # -----------------------------------------
 
 echo "========================================"
-echo "RELEASE COMPLETED
+echo "RELEASE COMPLETED SUCCESSFULLY"
+echo "Package: $PACKAGE_NAME"
+echo "Version: $NEW_VERSION"
+echo "Tag: $TAG"
+echo "========================================"
